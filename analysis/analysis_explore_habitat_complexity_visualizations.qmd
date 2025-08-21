@@ -98,7 +98,9 @@ habitatComplAggHist
 
 ------------------------------------------------------------------------
 
-## Time series - % of surveys by habitat complexity score over time
+## Time series - % surveys by habitat complexity score over time
+
+Stacked barplots showing the percent of surveys (y-axis) with each habitat complexity score (colors) by year (x-axis). Different colors represent each of the six habitat complexity scores (0, 1, 2, 3, 4, 5).
 
 ```{r}
 #| label: Time series - % of surveys with each habitat complexity score by year
