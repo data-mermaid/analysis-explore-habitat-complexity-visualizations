@@ -1,0 +1,299 @@
+---
+title: "WCS MERMAID Explore - Habitat Complexity Visualizations"
+author: "Iain R. Caldwell"
+date: 08/20/2025
+format: 
+  html: #for website
+    embed-resources: true
+editor: visual
+code-fold: true
+code-summary: "Show the code"
+toc: true
+title-block-banner: "#f0f3f5"
+title-block-banner-color: "black"
+include-after-body: "footer.html"
+---
+
+This code provides examples of visualizations shown on [MERMAID Explore](https://explore.datamermaid.org/) that focus on the habitat complexity protocol.
+
+------------------------------------------------------------------------
+
+## Getting summary sample event data from MERMAID
+
+The following code downloads summary sample event data from [MERMAID](https://datamermaid.org/) using the mermaidr package (documentation can be found at <https://data-mermaid.github.io/mermaidr/>). The summary sample events contain all surveys (i.e. sample events) that have permissions of "public summary" or "public".
+
+```{r}
+#| label: Load packages and download data
+#| warning: false
+rm(list = ls()) #remove past stored objects
+options(scipen = 999) #turn off scientific notation
+
+####  Load packages and libraries ####
+## If this is the first time using mermaidr, install the package through "remotes"
+# install.packages("remotes")
+# remotes::install_github("data-mermaid/mermaidr")
+# install.packages("tidyverse")
+# install.packages("plotly") 
+# install.packages("htmlwidgets")
+
+library(mermaidr) #package to download data from datamermaid.org
+library(tidyverse) #package that makes it easier to work with data
+library(plotly) #for interactive plotting
+library(htmlwidgets) #for saving plots at html files
+
+#### Get data from MERMAID for creating aggregate visualizations ####
+allMermaidSampEventsTBL <- mermaidr::mermaid_get_summary_sampleevents()
+```
+
+------------------------------------------------------------------------
+
+### Histogram - habitat complexity scores across surveys
+
+The following code creates a histogram showing the distribution of habitat complexity scores (0-5) across surveys (i.e. summary sample events). It uses the average habitat complexity scores per survey (sample event) but bins those averages into integers, which more closely reflects the fact that habitat complexity is scored as integers from 1-5.
+
+```{r}
+#| label: Histogram - habitat complexity scores across surveys
+
+### Get all of the relevant habitat complexity data from summary sample events
+habCompSurveySummTBL <- allMermaidSampEventsTBL %>% 
+  filter(!is.na(habitatcomplexity_score_avg_avg)) 
+
+habitatComplAggHist <-
+  plot_ly(x = habCompSurveySummTBL$habitatcomplexity_score_avg_avg,
+          type = 'histogram',
+          xbins = list(size = 1),
+          marker = list(color = "#769fca"),
+          height = 450,
+          hovertemplate = paste('Average score: %{x}',
+                                '<br>%{y} surveys',
+                                '<extra></extra>')) %>%
+  config(displayModeBar = TRUE,
+         displaylogo = FALSE,
+         modeBarButtonsToRemove = c('zoom','pan', 'select', 'zoomIn', 'zoomOut',
+                                    'autoScale', 'resetScale', 'lasso2d',
+                                    'hoverClosestCartesian', 'hoverCompareCartesian')) %>% 
+  layout(bargap = 0.1,
+         xaxis = list(title = "Score",
+                      linecolor = "black",
+                      linewidth = 2),
+         yaxis = list(title = "Number of surveys",
+                      linecolor = "black",   # Set the y-axis line color to black
+                      linewidth = 2),
+         annotations = list(
+           list(x = 0, y = 1.15, text = "HABITAT COMPLEXITY", showarrow = FALSE, 
+                xref = 'paper', yref = 'paper', xanchor = 'left', yanchor = 'top',
+                font = list(size = 20)),
+           list(x = 0, y = 1.08,
+                text = paste0(length(habCompSurveySummTBL$habitatcomplexity_score_avg_avg),
+                             " Surveys"),
+                showarrow = FALSE, 
+                xref = 'paper', yref = 'paper', xanchor = 'left', yanchor = 'top',
+                font = list(size = 12))
+         ),
+         margin = list(t = 50, b = 75))  # Increase top margin to create more space for title and subtitle
+
+# Visualize the plot
+habitatComplAggHist
+```
+
+------------------------------------------------------------------------
+
+## Time series - % of surveys by habitat complexity score over time
+
+```{r}
+#| label: Time series - % of surveys with each habitat complexity score by year
+
+### Get the relevant habitat complexity information
+habCompNumSurveysByYearTBL <- allMermaidSampEventsTBL %>% 
+  filter(!is.na(habitatcomplexity_score_avg_avg)) %>% 
+  mutate(RoundHabitatComplexity = as.factor(round(
+    habitatcomplexity_score_avg_avg)),
+         year = year(sample_date)) %>% 
+  group_by(year, RoundHabitatComplexity) %>% 
+  dplyr::summarise(NumSurveysByHabCompYear = length(RoundHabitatComplexity),
+                   .groups = "keep") %>% 
+  ungroup()
+
+#Merge with the total number of surveys per year to get percentage
+habCompPercSurveysByYearTBL <- habCompNumSurveysByYearTBL %>% 
+  left_join(habCompNumSurveysByYearTBL %>% 
+              group_by(year) %>% 
+              summarise(NumSurveysByYear = sum(NumSurveysByHabCompYear)) %>% 
+              ungroup(),
+            by = "year") %>% 
+  mutate(PercSurveysByHabCompYear = NumSurveysByHabCompYear/
+           NumSurveysByYear * 100)
+
+#### Create color map for habitat complexity
+habitatComplexityColorMap <- setNames(
+  object = c("#eff7ff", "#cbdaea", "#a8bed5", "#85a3c1", "#6288ad", "#3c6e9a"),
+  nm = levels(habCompPercSurveysByYearTBL$RoundHabitatComplexity))
+
+habitatComplTimeSeriesBarplot <-
+  plot_ly(data = habCompPercSurveysByYearTBL,
+          x = ~year,
+          y = ~PercSurveysByHabCompYear,
+          type = 'bar',
+          color = ~RoundHabitatComplexity,
+          colors = habitatComplexityColorMap,
+          height = 450,
+          hovertemplate = paste('Complexity score: %{fullData.name}',
+                                '<br>Year: %{x}',
+                                '<br>%{y:.1f}% of surveys',
+                                '<extra></extra>')) %>% 
+  config(displayModeBar = TRUE,
+         displaylogo = FALSE,
+         modeBarButtonsToRemove = c('zoom','pan', 'select', 'zoomIn', 'zoomOut',
+                                    'autoScale', 'resetScale', 'lasso2d',
+                                    'hoverClosestCartesian',
+                                    'hoverCompareCartesian')) %>% 
+  layout(barmode = "stack",
+         bargap = 0.1,
+         yaxis = list(title = "% of Surveys",
+                      linecolor = "black",
+                      tickvals = seq(0, 100, by = 10),  # Set y-axis tick values
+                      ticktext = seq(0, 100, by = 10),
+                      linewidth = 2),
+         xaxis = list(title = "Year",
+                      linecolor = "black",   # Set the x-axis line color to black
+                      linewidth = 2),
+         annotations = list(
+           list(x = 0, y = 1.15,
+                text = "HABITAT COMPLEXITY",
+                showarrow = FALSE,
+                xref = 'paper', yref = 'paper', xanchor = 'left', yanchor = 'top',
+                font = list(size = 20)),
+           list(x = 0, y = 1.08,
+                text = paste0(
+                  nrow(
+                    allMermaidSampEventsTBL %>% 
+                      filter(!is.na(habitatcomplexity_score_avg_avg))
+                    ), " Surveys"),
+                showarrow = FALSE, 
+                xref = 'paper', yref = 'paper', xanchor = 'left', yanchor = 'top',
+                font = list(size = 12))
+         ),
+         legend = list(orientation = "h",
+                       xanchor = "center",
+                       x = 0.5, y = -0.2),
+         margin = list(t = 50, b = 75))  # Increase top margin to create more space for title and subtitle
+
+# Visualize the plot
+habitatComplTimeSeriesBarplot
+```
+
+------------------------------------------------------------------------
+
+## Simple scale - Average habitat complexity for a single survey
+
+This code creates a very simple representation of a single number for average habitat complexity score for a single survey (i.e. MERMAID sample event), along a gradient of possible scores from 0-5. The horizontal line shows the gradient and the vertical line shows the average habitat complexity score, with a box to show the actual number. Icons were added to represent the gradient from low to high habitat complexity.
+
+```{r}
+#| label: Simple scale - Average habitat complexity for a single survey
+
+### Get relevant average habitat complexity scores 
+habCompSingleSeTBL <- allMermaidSampEventsTBL %>% 
+  filter(!is.na(habitatcomplexity_score_avg_avg)) 
+  
+
+#### Get icon images ####
+lowHabIcon <- png::readPNG("../icons/LowHabitatComplexity.png")
+medHabIcon <- png::readPNG("../icons/MediumHabitatComplexity.png")
+highHabIcon <- png::readPNG("../icons/HighHabitatComplexity.png")
+
+habitatComplSingleSeDotLinePlot <-
+  plot_ly(data = habCompSingleSeTBL[1,],
+          height = 450,
+          hovertemplate = "<extra></extra>") %>%  
+  add_segments(x = 0, xend = 5, y = 0, yend = 0,
+               line=list(color="black", linewidth = 4)) %>% 
+  add_segments(x = 0, xend = 0, y = -0.05, yend = 0.05,
+               line=list(color="black", linewidth = 4)) %>% 
+  add_segments(x = 1, xend = 1, y = -0.05, yend = 0.05,
+               line=list(color="black", linewidth = 4)) %>% 
+  add_segments(x = 2, xend = 2, y = -0.05, yend = 0.05,
+               line=list(color="black", linewidth = 4)) %>% 
+  add_segments(x = 3, xend = 3, y = -0.05, yend = 0.05,
+               line=list(color="black", linewidth = 4)) %>% 
+  add_segments(x = 4, xend = 4, y = -0.05, yend = 0.05,
+               line=list(color="black", linewidth = 4)) %>% 
+  add_segments(x = 5, xend = 5, y = -0.05, yend = 0.05,
+               line=list(color="black", linewidth = 4)) %>%
+  add_segments(x = ~habitatcomplexity_score_avg_avg,
+               xend = ~habitatcomplexity_score_avg_avg,
+               y = 0, yend = 0.8,
+               line=list(color="#70aae6", linewidth = 4)) %>%
+  add_trace(x = ~habitatcomplexity_score_avg_avg,
+            y = 0,
+            type = "scatter",
+            mode = "markers",
+            marker = list(color = "#70aae6", size = 20)) %>% 
+  config(displayModeBar = TRUE,
+         displaylogo = FALSE,
+         modeBarButtonsToRemove = c('zoom','pan', 'select', 'zoomIn', 'zoomOut',
+                                    'autoScale', 'resetScale', 'lasso2d',
+                                    'hoverClosestCartesian',
+                                    'hoverCompareCartesian')) %>% 
+  layout(xaxis = list(title = "",
+                      range = c(-0.5,5.5),
+                      zeroline = FALSE,
+                      showline = FALSE,
+                      showticklabels = TRUE,
+                      tickvals = c(0,1,2,3,4,5),
+                      showgrid = FALSE),
+         yaxis = list(title = "",
+                      range = c(-0.1,1.5),
+                      zeroline = FALSE,
+                      showline = FALSE,
+                      showticklabels = FALSE,
+                      showgrid = FALSE),
+         images = list(
+           list(source = raster2uri(as.raster(lowHabIcon)),
+           x = -0.5, y = 0.1, 
+           sizex = 1, sizey = 1,
+           xref = "x", yref = "y",
+           layer = "below",
+           xanchor = "left", yanchor = "bottom"),
+           list(source = raster2uri(as.raster(medHabIcon)),
+           x = 2, y = 0.1, 
+           sizex = 1, sizey = 1,
+           xref = "x", yref = "y",
+           layer = "below",
+           xanchor = "left", yanchor = "bottom"),
+           list(source = raster2uri(as.raster(highHabIcon)),
+           x = 4.5, y = 0.1, 
+           sizex = 1, sizey = 1,
+           xref = "x", yref = "y",
+           layer = "below",
+           xanchor = "left", yanchor = "bottom")),
+         showlegend = FALSE,
+         annotations = list(
+           list(x = 0, y = 1.15,
+                text = "HABITAT COMPLEXITY",
+                showarrow = FALSE,
+                xref = 'paper', yref = 'paper', xanchor = 'left', yanchor = 'top',
+                font = list(size = 20)),
+           list(x = ~habitatcomplexity_score_avg_avg,
+                y = 1,
+                text = paste0(habCompSingleSeTBL$habitatcomplexity_score_avg_avg[1],
+                              "\nAverage Habitat\nComplexity"),
+                showarrow = FALSE,
+                xref = "x", yref = "y",
+                xanchor = "middle", yanchor = "middle",
+                bordercolor = "#70aae6",
+                bgcolor = "white",
+                borderwidth = 4,
+                borderpad = 3,
+                font = list(size = 18)),
+           list(x = 0, y = 1.08,
+                text = paste0(length(habCompSingleSeTBL$habitatcomplexity_sample_unit_count[1]),
+                             " Survey"),
+                showarrow = FALSE, 
+                xref = 'paper', yref = 'paper', xanchor = 'left', yanchor = 'top',
+                font = list(size = 12))
+         ),
+         margin = list(t = 50, b = 75))  # Increase top margin to create more space for title and subtitle
+
+# Visualize the plot
+habitatComplSingleSeDotLinePlot
+```
